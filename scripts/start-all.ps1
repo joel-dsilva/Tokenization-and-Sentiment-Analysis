@@ -22,15 +22,20 @@ try {
 
 Write-Host "`n📋 Starting services in separate windows...`n" -ForegroundColor Yellow
 
+# Get the project root directory
+$projectRoot = Split-Path -Parent $PSScriptRoot
+
 # Start Python FastAPI
 Write-Host "1️⃣  Starting Python FastAPI..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\..\ThePythonPart'; python -m uvicorn main:app --reload --port 8000"
+$pythonPath = Join-Path $projectRoot "ThePythonPart"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$pythonPath'; python -m uvicorn main:app --reload --port 8000"
 
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 3
 
 # Start Go DataStream
 Write-Host "2️⃣  Starting Go DataStream..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\..\DataStream'; go run main.go"
+$goPath = Join-Path $projectRoot "DataStream"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$goPath'; go run main.go"
 
 Start-Sleep -Seconds 2
 
@@ -38,7 +43,7 @@ Start-Sleep -Seconds 2
 Write-Host "3️⃣  Starting Frontend..." -ForegroundColor Cyan
 try {
     $npmVersion = npm --version 2>&1
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\..'; npm run dev"
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$projectRoot'; npm run dev"
     Write-Host "   Frontend will be available at http://localhost:5173" -ForegroundColor Green
 } catch {
     Write-Host "   ⚠️  npm not found. Frontend not started." -ForegroundColor Yellow
