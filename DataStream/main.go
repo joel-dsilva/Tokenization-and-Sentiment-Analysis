@@ -5,12 +5,14 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 type SocialPost struct {
 	Username  string
@@ -24,11 +26,12 @@ type SentimentPayload struct {
 }
 
 func main() {
-	fmt.Println(" Starting FUD-Fader Data Firehose...")
+	fmt.Println("🔥 Starting FUD-Fader Data Firehose...")
+	fmt.Println("📡 Connecting to FastAPI at http://localhost:8000/analyze")
 	postChannel := make(chan SocialPost, 100)
-	flaskURL := "http://localhost:5000/analyze"
+	apiURL := "http://localhost:8000/analyze"
 	go igniteFirehose("data/dataset.csv", postChannel)
-	startBridge(postChannel, flaskURL)
+	startBridge(postChannel, apiURL)
 }
 
 func igniteFirehose(filepath string, ch chan<- SocialPost) {
@@ -38,24 +41,92 @@ func igniteFirehose(filepath string, ch chan<- SocialPost) {
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
+	// Read entire file to strip BOM
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		log.Fatalf("❌ Failed to read file: %v", err)
+	}
+
+	// Strip UTF-8 BOM if present
+	if len(fileBytes) >= 3 && fileBytes[0] == 0xEF && fileBytes[1] == 0xBB && fileBytes[2] == 0xBF {
+		fileBytes = fileBytes[3:]
+		log.Println("📝 Stripped UTF-8 BOM from CSV file")
+	}
+
+	reader := csv.NewReader(bytes.NewReader(fileBytes))
+	reader.LazyQuotes = true
+	reader.TrimLeadingSpace = true
+	reader.FieldsPerRecord = -1 // Allow variable number of fields per record
+	
 	headers, err := reader.Read()
 	if err != nil {
 		log.Fatalf("❌ Failed to read header: %v", err)
 	}
+	
+	// Clean headers: remove BOM and trim whitespace
+	for i, header := range headers {
+		// Remove any BOM characters
+		header = strings.TrimLeft(header, "\ufeff")
+		// Remove any non-printable characters
+		cleaned := strings.Builder{}
+		for _, r := range header {
+			if utf8.ValidRune(r) && (r > 31 || r == 9) { // Keep printable chars and tabs
+				cleaned.WriteRune(r)
+			}
+		}
+		headers[i] = strings.TrimSpace(cleaned.String())
+	}
+	
+	log.Printf("📊 CSV Headers: %v", headers)
 
 	colMap := make(map[string]int)
 	for i, headerName := range headers {
-		colMap[headerName] = i
+		colMap[strings.TrimSpace(headerName)] = i
 	}
 
+	rowCount := 0
+	skippedCount := 0
+	errorCount := 0
 	for {
 		record, err := reader.Read()
 		if err != nil {
-			log.Println("🏁 Reached end of dataset or read error.")
+			if err == io.EOF {
+				log.Printf("🏁 Reached end of dataset. Processed %d rows, skipped %d empty rows, %d errors.", rowCount, skippedCount, errorCount)
+			} else {
+				errorCount++
+				// Log error but continue processing
+				log.Printf("⚠️ Read error on line: %v (processed %d rows, skipped %d, errors %d)", err, rowCount, skippedCount, errorCount)
+				// Continue instead of breaking to process remaining rows
+				if errorCount > 100 {
+					log.Printf("❌ Too many errors (%d), stopping processing", errorCount)
+					break
+				}
+				continue
+			}
 			close(ch) // Close channel when done so the Bridge knows to stop
 			break
 		}
+		
+		// Skip empty rows
+		if len(record) == 0 {
+			skippedCount++
+			continue
+		}
+		
+		// Check if row is effectively empty
+		allEmpty := true
+		for _, field := range record {
+			if strings.TrimSpace(field) != "" {
+				allEmpty = false
+				break
+			}
+		}
+		if allEmpty {
+			skippedCount++
+			continue
+		}
+		
+		rowCount++
 		username := ""
 		if idx, ok := colMap["user_name"]; ok && idx < len(record) {
 			username = record[idx]
@@ -67,9 +138,15 @@ func igniteFirehose(filepath string, ch chan<- SocialPost) {
 		}
 		postText := ""
 		if idx, ok := colMap["cleanText"]; ok && idx < len(record) {
-			postText = record[idx]
+			postText = strings.TrimSpace(record[idx])
 		} else if idx, ok := colMap["text"]; ok && idx < len(record) {
-			postText = record[idx]
+			postText = strings.TrimSpace(record[idx])
+		}
+		
+		// Skip if no text found
+		if postText == "" {
+			skippedCount++
+			continue
 		}
 
 		post := SocialPost{
@@ -78,10 +155,16 @@ func igniteFirehose(filepath string, ch chan<- SocialPost) {
 			Timestamp: timestamp,
 		}
 
-		// Push to the channel
-		ch <- post
+		// Push to the channel (non-blocking check)
+		select {
+		case ch <- post:
+			// Successfully sent
+		default:
+			// Channel full, log warning but continue
+			log.Printf("⚠️ Channel full, dropping post from @%s", username)
+		}
 
-		delay := time.Duration(rand.Intn(100)+10) * time.Millisecond
+		delay := time.Duration(rand.Intn(50)+5) * time.Millisecond
 		time.Sleep(delay)
 	}
 }
@@ -89,7 +172,7 @@ func igniteFirehose(filepath string, ch chan<- SocialPost) {
 func startBridge(ch <-chan SocialPost, targetURL string) {
 	// Create a reusable HTTP client with a strict timeout so hanging requests don't crash us
 	client := &http.Client{
-		Timeout: 2 * time.Second,
+		Timeout: 10 * time.Second,
 	}
 
 	for post := range ch {
@@ -124,7 +207,7 @@ func startBridge(ch <-chan SocialPost, targetURL string) {
 		resp, err := client.Do(req)
 		if err != nil {
 			// If Flask is down, we log it and keep going. WE DO NOT CRASH.
-			log.Printf("Flask API unreachable (Owner B, wake up!): %v", err)
+			log.Printf("FastAPI unreachable (Owner B, wake up!): %v", err)
 			
 			// Tune the Flow Rate (Backoff if server is struggling)
 			time.Sleep(500 * time.Millisecond) 
@@ -137,7 +220,7 @@ func startBridge(ch <-chan SocialPost, targetURL string) {
 			previewText = previewText[:20] + "..."
 		}
 		
-		fmt.Printf("Sent POST to Flask: [@%s] %s | Status: %s\n", payload.Username, previewText, resp.Status)
+		fmt.Printf("✅ [@%s] %s | Status: %s | Score: Processing...\n", payload.Username, previewText, resp.Status)
 		resp.Body.Close()
 	}
 	

@@ -24,6 +24,16 @@ contract VibeOracle {
     // Owner of the contract
     address public owner;
     
+    // Current vibe score (0-100) for frontend compatibility
+    uint8 public vibeScore;
+    
+    // Rolling average for "buy the dip" logic
+    uint8 private rollingAverage;
+    uint256 private scoreSum;
+    uint256 private scoreCount;
+    uint256 private constant MAX_HISTORY = 100;
+    uint8 private constant FUD_THRESHOLD = 20;
+    
     // Events
     event SentimentSubmitted(
         uint256 indexed id,
@@ -35,6 +45,13 @@ contract VibeOracle {
     );
     
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    
+    event AutomatedBuyExecuted(
+        uint8 indexed oldScore,
+        uint8 indexed newScore,
+        uint256 timestamp,
+        address executedBy
+    );
     
     // Modifiers
     modifier onlyOwner() {
@@ -48,6 +65,8 @@ contract VibeOracle {
     constructor() {
         owner = msg.sender;
         sentimentCounter = 0;
+        vibeScore = 50; // Start at neutral
+        rollingAverage = 50;
     }
     
     /**
@@ -75,6 +94,11 @@ contract VibeOracle {
         
         sentimentCounter++;
         
+        // Convert -100 to 100 range to 0-100 range for vibeScore
+        int256 normalized = (_sentimentScore + 100) / 2;
+        require(normalized >= 0 && normalized <= 100, "VibeOracle: normalized score out of range");
+        updateVibeScore(uint8(uint256(normalized)));
+        
         emit SentimentSubmitted(
             id,
             _username,
@@ -101,6 +125,44 @@ contract VibeOracle {
      */
     function getSentimentCount() public view returns (uint256) {
         return sentimentCounter;
+    }
+    
+    /**
+     * @dev Update vibe score (for frontend compatibility)
+     * @param _newScore New vibe score (0-100)
+     */
+    function updateVibeScore(uint8 _newScore) public {
+        require(_newScore <= 100, "VibeOracle: score must be between 0 and 100");
+        
+        uint8 oldScore = vibeScore;
+        vibeScore = _newScore;
+        
+        // Update rolling average
+        if (scoreCount < MAX_HISTORY) {
+            scoreCount++;
+            scoreSum = scoreSum + uint256(_newScore);
+        } else {
+            // Maintain rolling window by approximating removal of oldest
+            scoreSum = scoreSum - uint256(rollingAverage) + uint256(_newScore);
+        }
+        rollingAverage = uint8(scoreSum / scoreCount);
+        
+        // Check for "buy the dip" trigger
+        executeTradeIfFUD();
+    }
+    
+    /**
+     * @dev Execute trade if FUD threshold is reached
+     */
+    function executeTradeIfFUD() private {
+        if (vibeScore <= FUD_THRESHOLD && rollingAverage <= FUD_THRESHOLD) {
+            emit AutomatedBuyExecuted(
+                vibeScore,
+                vibeScore,
+                block.timestamp,
+                msg.sender
+            );
+        }
     }
     
     /**
