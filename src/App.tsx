@@ -13,11 +13,13 @@ const App = () => {
   const [walletAddress, setWalletAddress] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [sentimentValue, setSentimentValue] = useState<number>(50);
-  const [status, setStatus] = useState("Awaiting X-Stream Sync...");
-  const [tweetFeed, setTweetFeed] = useState<string[]>(["System Standby...", "X-API Ready..."]);
-  
-  // State for the jittery stock line animation
+  const [status, setStatus] = useState("SYSTEM_IDLE");
+  const [tweetFeed, setTweetFeed] = useState<string[]>(["[LOG] Ready for X-Firehose Sync", "[LOG] Latency: 14ms"]);
   const [liveGraphData, setLiveGraphData] = useState([40, 42, 38, 45, 43, 50]);
+  
+  // NEW: State for the professional alert
+  const [showAlert, setShowAlert] = useState(false);
+  const [selectedModule, setSelectedModule] = useState("");
 
   const mockTweets = [
     "@crypto_whale: $BTC looking extremely bullish on the 4H chart! 🚀",
@@ -30,22 +32,26 @@ const App = () => {
     "@Web3Whiz: AI-based tokens are the main narrative this week. $RNDR"
   ];
 
-  // Logic to Connect Real MetaMask Wallet
+  const handleSidebarClick = (moduleName: string) => {
+    if (moduleName === "Dashboard") return; // Allow dashboard
+    setSelectedModule(moduleName.toUpperCase());
+    setShowAlert(true);
+    // Auto-hide after 3 seconds
+    setTimeout(() => setShowAlert(false), 3000);
+  };
+
   const handleConnect = async () => {
     try {
-      setStatus("Connecting to MetaMask...");
+      setStatus("AUTH_REQUEST");
       const signer = await getProviderOrSigner(true); 
       const address = await (signer as ethers.Signer).getAddress();
       setWalletAddress(address);
-      setStatus("Wallet Connected");
+      setStatus("AUTH_SUCCESS");
     } catch (err: any) {
-      console.error("Connection failed:", err);
-      setStatus("Connection Failed");
-      alert("Could not connect to MetaMask. Make sure it is unlocked.");
+      setStatus("AUTH_ERROR");
     }
   };
 
-  // Volatility Animation during loading
   useEffect(() => {
     let interval: any;
     if (loading) {
@@ -55,20 +61,18 @@ const App = () => {
           newData.push(Math.floor(Math.random() * (90 - 10 + 1)) + 10);
           return newData;
         });
-      }, 150);
+      }, 100);
     }
     return () => clearInterval(interval);
   }, [loading]);
 
   const triggerTwitterSync = () => {
     setLoading(true);
-    setStatus("Scraping Background Tweets...");
-    setTweetFeed(["Connecting to X-Firehose..."]);
-    
+    setStatus("VECTOR_ANALYSIS");
     let i = 0;
     const interval = setInterval(() => {
       if (i < mockTweets.length) {
-        setTweetFeed(prev => [mockTweets[i], ...prev.slice(0, 4)]);
+        setTweetFeed(prev => [`[INCOMING] ${mockTweets[i]}`, ...prev.slice(0, 5)]);
         i++;
       } else {
         clearInterval(interval);
@@ -76,15 +80,15 @@ const App = () => {
         setSentimentValue(finalScore);
         setLiveGraphData([40, 45, 35, 50, 48, finalScore]); 
         setLoading(false);
-        setStatus("Batch Analysis Complete");
+        setStatus("ANALYSIS_COMPLETE");
       }
-    }, 800);
+    }, 600);
   };
 
   const getVerdict = () => {
-    if (sentimentValue >= 70) return { label: "BUY", color: "#22c55e" };
-    if (sentimentValue <= 30) return { label: "SELL", color: "#ef4444" };
-    return { label: "NEUTRAL", color: "#eab308" };
+    if (sentimentValue >= 70) return { label: "STRONG BUY", color: "#22c55e", desc: "Bullish divergence detected across 42 sources." };
+    if (sentimentValue <= 30) return { label: "STRONG SELL", color: "#ef4444", desc: "Bearish pressure mounting. Exit advised." };
+    return { label: "HOLD / NEUTRAL", color: "#eab308", desc: "Market consolidating. No clear direction." };
   };
 
   const verdict = getVerdict();
@@ -92,123 +96,161 @@ const App = () => {
   const chartData = {
     labels: ['', '', '', '', '', 'LIVE'],
     datasets: [{
-      label: 'Volatility Index',
+      label: 'Confidence',
       data: liveGraphData,
       borderColor: loading ? '#f59e0b' : '#6366f1',
-      backgroundColor: loading ? 'rgba(245, 158, 11, 0.1)' : 'rgba(99, 102, 241, 0.1)',
+      backgroundColor: 'rgba(99, 102, 241, 0.05)',
       fill: true,
-      tension: 0.4,
-      pointRadius: loading ? 0 : 5,
+      tension: 0.2,
+      pointRadius: 2,
+      borderWidth: 2,
     }]
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-100 font-sans p-4 md:p-8">
-      {/* SentiMint Navbar */}
-      <nav className="max-w-7xl mx-auto flex justify-between items-center mb-8 bg-[#0f172a] border border-slate-800 p-5 rounded-3xl shadow-2xl">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
-            <span className="text-white font-black text-xl italic">S</span>
+    <div className="flex min-h-screen bg-[#02040a] text-slate-300 font-mono selection:bg-indigo-500/30 overflow-hidden">
+      
+      {/* PROFESSIONAL DEV ALERT OVERLAY */}
+      {showAlert && (
+        <div className="fixed top-10 right-10 z-[100] animate-in slide-in-from-right-10 duration-300">
+          <div className="bg-[#0f172a] border-l-4 border-indigo-500 p-5 rounded-r-xl shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-md border border-white/5 flex items-center gap-4">
+             <div className="w-10 h-10 bg-indigo-500/20 rounded flex items-center justify-center">
+                <span className="text-indigo-400 font-black animate-pulse">!</span>
+             </div>
+             <div>
+                <p className="text-[10px] font-black text-white uppercase tracking-widest">{selectedModule} LOCKED</p>
+                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter mt-1">MODULE CURRENTLY UNDER DEPLOYMENT (V2.1)</p>
+             </div>
+             <button onClick={() => setShowAlert(false)} className="ml-4 text-slate-600 hover:text-white transition-colors text-xs font-black">X</button>
           </div>
-          <h1 className="text-2xl font-black tracking-tight">SentiMint</h1>
         </div>
-        <button 
-          onClick={handleConnect} 
-          className="px-6 py-2 bg-slate-900 hover:bg-slate-800 rounded-full text-xs font-bold border border-slate-700 transition-all active:scale-95"
-        >
-          {walletAddress ? `Wallet: ${walletAddress.slice(0,6)}...${walletAddress.slice(-4)}` : "Connect Wallet"}
-        </button>
-      </nav>
+      )}
 
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
+      {/* SIDEBAR */}
+      <aside className="w-20 lg:w-64 bg-[#0a0d14] border-r border-slate-800 hidden md:flex flex-col py-8 px-4">
+        <div className="flex items-center gap-3 px-2 mb-12">
+          <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center font-black text-white italic">S</div>
+          <span className="hidden lg:block text-lg font-black tracking-tighter text-white uppercase">SentiMint</span>
+        </div>
+        <nav className="flex-grow space-y-2">
+          {['Dashboard', 'X-Scanner', 'Portfolio', 'History', 'API Settings'].map((item, idx) => (
+            <div 
+              key={item} 
+              onClick={() => handleSidebarClick(item)}
+              className={`p-3 rounded-lg text-[10px] font-black transition-all cursor-pointer uppercase tracking-tighter ${idx === 0 ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-600/20' : 'hover:bg-slate-800/50 text-slate-500'}`}
+            >
+              {item}
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      {/* MAIN CONTENT */}
+      <main className="flex-grow p-4 lg:p-8 space-y-6 overflow-y-auto">
         
-        {/* LEFT COLUMN: Speed Dial & Tweet Scraper */}
-        <div className="lg:col-span-4 space-y-6">
-          <div className="bg-[#0f172a] border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl">
-            <h3 className="text-center text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-6">Aggregated Sentiment</h3>
-            <GaugeComponent
-              value={sentimentValue}
-              type="semicircle"
-              arc={{
-                width: 0.15, padding: 0.005, cornerRadius: 1,
-                subArcs: [
-                  { limit: 30, color: '#ef4444' },
-                  { limit: 70, color: '#eab308' },
-                  { limit: 100, color: '#22c55e' },
-                ]
-              }}
-              pointer={{ type: "needle", color: '#94a3b8', elastic: true }}
-              labels={{ valueLabel: { style: { fontSize: "40px", fill: "#fff", fontWeight: "800" } } }}
-            />
-            <div className="text-center mt-4">
-              <span className="text-3xl font-black italic tracking-tighter" style={{ color: verdict.color }}>
-                {verdict.label}
-              </span>
-            </div>
-          </div>
+        {/* HEADER BAR */}
+        <header className="flex justify-between items-center bg-[#0d1117] border border-slate-800 p-4 rounded-xl shadow-sm">
+           <div className="flex gap-10">
+              <div>
+                <p className="text-[8px] text-slate-500 font-black uppercase tracking-[0.2em] mb-1">System Status</p>
+                <p className={`text-[10px] font-black ${loading ? 'text-amber-400' : 'text-emerald-400'}`}>{status}</p>
+              </div>
+              <div>
+                <p className="text-[8px] text-slate-500 font-black uppercase tracking-[0.2em] mb-1">Active Pair</p>
+                <p className="text-[10px] font-black text-white">X-CORE / SEPT</p>
+              </div>
+           </div>
+           <button onClick={handleConnect} className="text-[9px] font-black px-5 py-2.5 border border-slate-700 rounded bg-slate-900/50 hover:border-indigo-500 transition-all uppercase tracking-widest">
+             {walletAddress ? `CONNECTED: ${walletAddress.slice(0,6)}...` : "CONNECT WALLET"}
+           </button>
+        </header>
 
-          <div className="bg-[#0f172a] border border-slate-800 p-6 rounded-[2.5rem] shadow-2xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Live X-Stream Feed</h3>
-              <div className={`w-2 h-2 rounded-full ${loading ? 'bg-red-500 animate-ping' : 'bg-green-500'}`}></div>
-            </div>
-            <div className="space-y-3 h-52 overflow-hidden font-mono text-[10px]">
-              {tweetFeed.map((tweet, idx) => (
-                <div key={idx} className="p-2 border-b border-white/5 opacity-80 animate-in fade-in slide-in-from-bottom-1">
-                   <span className="text-indigo-400 font-bold mr-1">[$]</span> {tweet}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: Interactive Graph & Minting */}
-        <div className="lg:col-span-8 bg-[#0f172a] border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl flex flex-col">
-          <div className="flex justify-between items-start mb-10">
-            <div>
-              <h2 className="text-2xl font-bold italic">Twitter Sentiment Velocity</h2>
-              <p className="text-sm text-slate-500 font-mono">Real-time inference via Go-Backend Engine</p>
-            </div>
-            <button 
-              onClick={triggerTwitterSync}
-              disabled={loading}
-              className="bg-indigo-600 hover:bg-indigo-500 px-10 py-4 rounded-2xl font-black transition-all shadow-xl shadow-indigo-600/20 disabled:opacity-50"
-            >
-              {loading ? "SYNCING DATA..." : "SYNC LIVE FEED"}
-            </button>
-          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          <div className="flex-grow min-h-[350px]">
-            <Line 
-              data={chartData} 
-              options={{ 
-                responsive: true, 
-                maintainAspectRatio: false,
-                animation: { duration: loading ? 0 : 1000 },
-                scales: { 
-                  y: { min: 0, max: 100, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#475569' } },
-                  x: { grid: { display: false }, ticks: { display: false } }
-                },
-                plugins: { legend: { display: false } }
-              }} 
-            />
-          </div>
-
-          <div className="mt-8 grid grid-cols-2 gap-4 border-t border-slate-800 pt-8">
-            <div className="flex flex-col justify-center">
-              <p className="text-[10px] text-slate-500 font-bold uppercase">Backend Status</p>
-              <p className="text-sm font-mono text-indigo-400">{status}</p>
+          {/* CHART AREA */}
+          <section className="lg:col-span-2 space-y-6">
+            <div className="bg-[#0d1117] border border-slate-800 p-8 rounded-2xl h-[480px] flex flex-col relative shadow-inner">
+               <div className="mb-8">
+                  <h3 className="text-2xl font-black text-white italic tracking-tighter uppercase">Sentiment Velocity</h3>
+                  <p className="text-[10px] text-slate-500 font-bold tracking-tight">ANALYZING SOCIAL DATA PACKETS VS. LIQUIDITY FLOWS</p>
+               </div>
+               <div className="flex-grow">
+                  <Line 
+                    data={chartData} 
+                    options={{ 
+                      responsive: true, 
+                      maintainAspectRatio: false,
+                      scales: { 
+                        y: { display: true, grid: { color: '#161b22' }, ticks: { color: '#484f58', font: { size: 9, family: 'monospace' } } },
+                        x: { display: false }
+                      },
+                      plugins: { legend: { display: false } }
+                    }} 
+                  />
+               </div>
             </div>
-            <button 
-              onClick={() => tokenizeText(sentimentValue)}
-              disabled={loading || !walletAddress || sentimentValue === 50}
-              className="bg-white text-black font-black rounded-2xl py-3 hover:bg-slate-200 transition-all uppercase text-sm tracking-tighter disabled:opacity-30"
-            >
-              Mint VibeScore to Chain
-            </button>
-          </div>
+
+            {/* LOGS AND SYNC BUTTON */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+               <div className="lg:col-span-8 bg-[#0d1117] border border-slate-800 p-6 rounded-2xl">
+                  <p className="text-[8px] text-indigo-400 font-black uppercase tracking-[0.2em] mb-4">Neural Data Log</p>
+                  <div className="space-y-2 h-28 overflow-hidden font-mono text-[10px]">
+                    {tweetFeed.map((t, i) => (
+                      <div key={i} className="flex gap-2 text-slate-400 border-b border-white/5 pb-1">
+                        <span className="text-slate-600 opacity-50">[{new Date().toLocaleTimeString([], {hour12: false})}]</span>
+                        <span className="truncate">{t}</span>
+                      </div>
+                    ))}
+                  </div>
+               </div>
+               
+               <div className="lg:col-span-4 flex">
+                 <button 
+                   onClick={triggerTwitterSync}
+                   disabled={loading}
+                   className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded-2xl font-black transition-all text-lg lg:text-xl uppercase italic tracking-tighter shadow-xl shadow-indigo-900/30 flex items-center justify-center p-4 border-b-4 border-indigo-800 active:border-b-0 active:translate-y-1"
+                 >
+                   {loading ? "SCANNING..." : "SYNC DATA"}
+                 </button>
+               </div>
+            </div>
+          </section>
+
+          {/* EXECUTION SIDEBAR */}
+          <section className="space-y-6">
+            <div className="bg-[#0d1117] border border-slate-800 p-8 rounded-2xl flex flex-col items-center shadow-lg">
+               <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-10">Aggregated Vibe</p>
+               <GaugeComponent
+                value={sentimentValue}
+                type="semicircle"
+                arc={{ width: 0.1, padding: 0.02, subArcs: [{ limit: 30, color: '#ef4444' }, { limit: 70, color: '#eab308' }, { limit: 100, color: '#22c55e' }] }}
+                pointer={{ type: "needle", color: '#444c56', width: 8 }}
+                labels={{ valueLabel: { style: { fontSize: "36px", fill: "#fff", fontWeight: "900", fontFamily: 'monospace' } } }}
+               />
+               <div className="text-center mt-8">
+                 <div className="text-2xl font-black italic tracking-tighter mb-2" style={{ color: verdict.color }}>{verdict.label}</div>
+                 <p className="text-[10px] text-slate-500 leading-relaxed font-bold tracking-tight uppercase px-2">{verdict.desc}</p>
+               </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-indigo-900/20 to-transparent border border-indigo-500/20 p-8 rounded-2xl relative overflow-hidden">
+               <div className="relative z-10">
+                 <h4 className="text-[10px] font-black text-white uppercase mb-4 tracking-[0.2em]">Settlement Engine</h4>
+                 <p className="text-[9px] text-slate-500 mb-8 font-bold leading-tight">MINT CURRENT NEURAL ANALYSIS AS AN ON-CHAIN VIBESCORE RECORD.</p>
+                 <button 
+                   onClick={() => tokenizeText(sentimentValue)}
+                   disabled={loading || !walletAddress}
+                   className="w-full bg-white text-black py-4 rounded-xl font-black text-sm uppercase tracking-tighter hover:bg-indigo-50 transition-all active:scale-95 disabled:opacity-20 shadow-lg"
+                 >
+                   MINT VIBESCORE
+                 </button>
+               </div>
+               <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-indigo-500/10 blur-2xl rounded-full" />
+            </div>
+          </section>
+
         </div>
-      </div>
+      </main>
     </div>
   );
 };
