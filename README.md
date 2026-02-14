@@ -1,7 +1,16 @@
 # FUD-Fader Oracle 🚀
 
 A real-time sentiment analysis oracle that autonomously executes "buy the dip" trades when FUD (Fear, Uncertainty, Doubt) reaches extreme levels.
-
+We used the following dataset:
+```
+```
+```
+```
+https://www.kaggle.com/datasets/gautamchettiar/bitcoin-sentiment-analysis-twitter-data
+```
+```
+```
+```
 ## Architecture
 
 ```
